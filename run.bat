@@ -1,0 +1,1 @@
+g++ -o demo demo.c -I. -L. -lDVP_CAMSDK
