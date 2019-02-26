@@ -62,15 +62,15 @@ void openCam()
 INT CALLBACK SnapCallBack(INT iCamID, BYTE *pImageBuffer, tDSFrameInfo *pFrInfo)
 {
 	//TRACE("%ld\n",pFrInfo->uiTimeStamp);
-    printf("***********************************************\n");
-    printf("entry snap call back\n");
-    trace();
+    // printf("***********************************************\n");
+    // printf("entry snap call back\n");
+    // trace();
 	BYTE* pImg = CameraISP(iCamID, pImageBuffer, pFrInfo);
     if(pImg){
-        printf("cameraisp success\n");
+        // printf("cameraisp success\n");
         // CameraDisplayRGB24(iCamID, pBmp24, pFrInfo);
-        printf("num: %d\n", pFrInfo->uBytes);
-        printf("W&H: %d, %d\n", pFrInfo->uiWidth, pFrInfo->uiHeight);
+        // printf("num: %d\n", pFrInfo->uBytes);
+        // printf("W&H: %d, %d\n", pFrInfo->uiWidth, pFrInfo->uiHeight);
         if(m_signal==0){
             m_signal++;
             memcpy(m_pRTImgBuf, pImg, pFrInfo->uBytes);
@@ -82,7 +82,7 @@ INT CALLBACK SnapCallBack(INT iCamID, BYTE *pImageBuffer, tDSFrameInfo *pFrInfo)
     else{
         printf("cameraisp fail\n");
     }
-    printf("***********************************************\n");
+    // printf("***********************************************\n");
 	return 0;
 }
 
@@ -90,17 +90,15 @@ BYTE* getImage(){
     while(m_signal!=0){
         usleep(1000);
     }
-    FILE* fd = fopen("img.bin", "wb");
-    if(fd){
-        printf("open img.bin success\n");
-        fwrite(m_pRTImgBuf, 1, iRTImgLen, fd);
-        fclose(fd);
-        myprintf(m_pRTImgBuf);
-    }
-    else{
-        printf("open img.bin fail\n");
-    }
-
+    // FILE* fd = fopen("img.bin", "wb");
+    // if(fd){
+    //     printf("open img.bin success\n");
+    //     fwrite(m_pRTImgBuf, 1, iRTImgLen, fd);
+    //     fclose(fd);
+    // }
+    // else{
+    //     printf("open img.bin fail\n");
+    // }
     return m_pRTImgBuf;
 }
 
@@ -161,12 +159,12 @@ void initCam(void* hWnd){
     }
 
     m_pImgBuf = (BYTE*)malloc((iWidth+1)*(iHeight+1)*3);
-    if(CameraSetOnceWB(m_iCameraID) != STATUS_OK){
-        printf("wb fail\n");
-    }
-    else{
-        printf("wb success\n");
-    }
+    // if(CameraSetOnceWB(m_iCameraID) != STATUS_OK){
+    //     printf("wb fail\n");
+    // }
+    // else{
+    //     printf("wb success\n");
+    // }
 }
 
 void pic(int iPicType){
