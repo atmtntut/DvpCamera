@@ -1,21 +1,45 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <sys/time.h>
+#include <stdlib.h>
 #include "DVP_CamAPI.h"
 #include "DVP_Define.h"
 #include "DVP_Paramdef.h"
+
+// #ifdef _MSC_VER
+//     #define DLL_EXPORT __declspec( dllexport ) 
+// #else
+//     #define DLL_EXPORT
+// #endif
+
 int m_iCameraID = 0;
 char m_sCameraName[NAME_LEN_MAX] = {};
-unsigned char* m_pImgBuf = NULL;
+BYTE* m_pImgBuf = NULL;
+BYTE* m_pRTImgBuf = NULL;
+int iRTImgLen = 0;
 char* m_sTimeBuf[128] = {};
+volatile char m_signal = 0;
 
-void trace(){    
+extern "C" {
+
+void myprintf(BYTE* buffer){
+    if(buffer == NULL)return;
+    for(int i=0;i<30;i++){
+        if(i%15 == 0){
+            printf("\n");
+        }
+        printf("%02x ", *(buffer+i));
+    }
+    printf("\n");
+}
+
+DLL_EXPORT void trace(){    
     struct timeval tv;    
     gettimeofday(&tv,NULL);
     printf("[%d.%03d]\n", tv.tv_sec, tv.tv_usec / 1000);    
 }    
 
-void getCamera()
+void openCam()
 {
     tDSCameraDevInfo DSCameraList[5];   
     int m_iNum = 0;   
@@ -38,48 +62,95 @@ void getCamera()
 INT CALLBACK SnapCallBack(INT iCamID, BYTE *pImageBuffer, tDSFrameInfo *pFrInfo)
 {
 	//TRACE("%ld\n",pFrInfo->uiTimeStamp);
-	BYTE* pBmp24 = CameraISP(iCamID,pImageBuffer, pFrInfo);
-    if(pBmp24){
+    printf("***********************************************\n");
+    printf("entry snap call back\n");
+    trace();
+	BYTE* pImg = CameraISP(iCamID, pImageBuffer, pFrInfo);
+    if(pImg){
         printf("cameraisp success\n");
+        // CameraDisplayRGB24(iCamID, pBmp24, pFrInfo);
+        printf("num: %d\n", pFrInfo->uBytes);
+        printf("W&H: %d, %d\n", pFrInfo->uiWidth, pFrInfo->uiHeight);
+        if(m_signal==0){
+            m_signal++;
+            memcpy(m_pRTImgBuf, pImg, pFrInfo->uBytes);
+            m_signal--;
+        }
+        //myprintf(m_pRTImgBuf);
+        // myprintf(pImg);
     }
     else{
         printf("cameraisp fail\n");
     }
-	
+    printf("***********************************************\n");
 	return 0;
 }
 
-void initCamera(){
+BYTE* getImage(){
+    while(m_signal!=0){
+        usleep(1000);
+    }
+    FILE* fd = fopen("img.bin", "wb");
+    if(fd){
+        printf("open img.bin success\n");
+        fwrite(m_pRTImgBuf, 1, iRTImgLen, fd);
+        fclose(fd);
+        myprintf(m_pRTImgBuf);
+    }
+    else{
+        printf("open img.bin fail\n");
+    }
+
+    return m_pRTImgBuf;
+}
+
+void initCam(void* hWnd){
+    openCam();
     tDSFrameInfo sFrInfo = {};
-    emDSCameraStatus status = CameraInitEx(m_sCameraName, &m_iCameraID);
-    // emDSCameraStatus status = CameraInit(SnapCallBack, m_sCameraName, NULL, &m_iCameraID);
+    // emDSCameraStatus status = CameraInitEx(m_sCameraName, &m_iCameraID);
+    emDSCameraStatus status = CameraInit(SnapCallBack, m_sCameraName, (HWND)hWnd, &m_iCameraID);
     if (status != STATUS_OK){          
         printf("init camera fail\n");
         return;   
     }    
     tDSCameraCapability sDSCameraCap = {};
     CameraGetCapability(m_iCameraID, sDSCameraCap);
-    printf("%d, %d\n", sDSCameraCap.pImageSizeDesc[0].iWidth, sDSCameraCap.pImageSizeDesc[0].iHeight);
-
+    for(int i=0;i<sDSCameraCap.iImageSizeDesc;i++){
+        printf("W&H: %d, %d\n", sDSCameraCap.pImageSizeDesc[i].iWidth, sDSCameraCap.pImageSizeDesc[i].iHeight);
+    }
+    if(CameraSetImageSizeSel(m_iCameraID, 5, FALSE) != STATUS_OK){
+        printf("set imgsizesel fail\n");
+    }
+    else{
+        printf("set imgsizesel success\n");
+    }
 
     BOOL bROI = FALSE; 
     INT iHOff = 0; 
     INT iVOff = 0; 
     INT iWidth = 0; 
     INT iHeight = 0; 
-    status = CameraGetImageSize(m_iCameraID, &bROI, &iHOff, &iVOff, &iWidth, &iHeight, TRUE); 
+    status = CameraGetImageSize(m_iCameraID, &bROI, &iHOff, &iVOff, &iWidth, &iHeight, FALSE); 
     if (status != STATUS_OK){          
         printf("camera get imgsize fail\n");
         return;   
     }
-    printf("bROI: %d, Offset: %d, %d, W&H: %d, %d\n", bROI, iHOff, iVOff, iWidth, iHeight);
+    else{
+        printf("bROI: %d, Offset: %d, %d, W&H: %d, %d\n", bROI, iHOff, iVOff, iWidth, iHeight);
+    }
+
+    iRTImgLen = iWidth*iHeight*3;
+    m_pRTImgBuf = (BYTE*)malloc(iRTImgLen);
+
     int iResSel = 0;
-    status = CameraGetImageSizeSel(m_iCameraID, &iResSel, TRUE);
+    status = CameraGetImageSizeSel(m_iCameraID, &iResSel, FALSE);
     if (status != STATUS_OK){          
         printf("camera get imgsizesel fail\n");
         return;   
     }
-    printf("ressel: %d\n", iResSel);
+    else{
+        printf("ressel: %d\n", iResSel);
+    }
     status = CameraPlay(m_iCameraID);   
     if (status != STATUS_OK){          
         printf("camera play fail\n");
@@ -88,25 +159,19 @@ void initCamera(){
     else{
         printf("camera play success\n");
     }
-    // if(CameraSetImageSizeSel(m_iCameraID, 0, FALSE) != STATUS_OK){
-    //     printf("set imgsizesel fail\n");
-    // }
-    // else{
-    //     printf("set imgsizesel success\n");
-    // }
 
     m_pImgBuf = (BYTE*)malloc((iWidth+1)*(iHeight+1)*3);
-}
-
-void pic(int iPicType){
     if(CameraSetOnceWB(m_iCameraID) != STATUS_OK){
         printf("wb fail\n");
     }
     else{
         printf("wb success\n");
     }
+}
+
+void pic(int iPicType){
+    printf("pic bgn picType: %d\n", iPicType);
     trace();
-    printf("picType: %d", iPicType);
 
     if (CameraCaptureFile(m_iCameraID, "E:\\test", iPicType, 90) != STATUS_OK){
     //if (CameraCaptureFile(m_iCameraID, NULL, iPicType, 90) != STATUS_OK){
@@ -133,17 +198,7 @@ void pic(int iPicType){
     //     printf("get imgbuf success\n");
     // }
     // trace();
-}
-
-void myprintf(){
-    if(m_pImgBuf == NULL)return;
-    for(int i=0;i<30;i++){
-        if(i%15 == 0){
-            printf("\n");
-        }
-        printf("%02x ", *(m_pImgBuf+i));
-    }
-    printf("\n");
+    printf("pic end\n");
 }
 
 int main(int argc, char** argv){
@@ -152,16 +207,19 @@ int main(int argc, char** argv){
         picType = atoi(argv[1]);
     }
 
-    getCamera();
-    initCamera();
-    pic(picType);
-    myprintf();
-    usleep(1000*1000);
-    pic(picType);
-    myprintf();
+    // initCamera();
+    // for(int i=0;i<3;i++){
+    //     pic(picType);
+    //     myprintf();
+    //     // usleep(1000*1000);
+    //     // CameraReleaseImageBuffer(m_iCameraID, DATA_TYPE_RGB8, m_pImgBuf); 
+    //     // m_pImgBuf = NULL;
+    // }
 
     if(m_pImgBuf){
         free(m_pImgBuf);
     }
     return 0;
+}
+
 }
